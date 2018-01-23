@@ -1,8 +1,0 @@
-package: github.com/sam701/secret-sharing
-import:
-- package: github.com/hashicorp/vault
-  version: ^0.7.0
-  subpackages:
-  - shamir
-- package: github.com/urfave/cli
-  version: ^1.19.1
