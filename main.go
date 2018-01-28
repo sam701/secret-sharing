@@ -16,12 +16,12 @@ import (
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	app := cli.NewApp()
-	app.Version = "0.1.0"
+	app.Version = "0.2.0"
 	app.Commands = []cli.Command{
 		{
 			Name:      "split",
-			Usage:     "split file into parts",
-			ArgsUsage: "<file to split>",
+			Usage:     "Split file into parts. If the <file to split> is omitted it reads from stdin.",
+			ArgsUsage: "[<file to split>]",
 			Action:    split,
 			Flags: []cli.Flag{
 				cli.IntFlag{
@@ -34,8 +34,13 @@ func main() {
 				},
 				cli.StringFlag{
 					Name:  "output-dir, o",
-					Usage: "output directory that will contain <file-name>.partn files",
+					Usage: "output directory that will contain <file-name>.n files",
 					Value: ".",
+				},
+				cli.StringFlag{
+					Name:  "prefix",
+					Usage: "prefix of the output shares when read from stdin",
+					Value: "stdin",
 				},
 			},
 		},
@@ -48,6 +53,7 @@ func main() {
 				cli.StringFlag{
 					Name:  "output, o",
 					Usage: "output file name",
+					Value: "stdout",
 				},
 			},
 		},
@@ -61,23 +67,29 @@ var encoding = base64.RawURLEncoding
 func split(ctx *cli.Context) error {
 	no := ctx.Int("parts")
 	if no == 0 {
+		cli.ShowSubcommandHelp(ctx)
 		return errors.New("parts flag is missing")
 	}
 	threshold := ctx.Int("threshold")
 	if threshold == 0 {
+		cli.ShowSubcommandHelp(ctx)
 		return errors.New("threshold flag is missing")
 	}
 
 	inputFile := ctx.Args().First()
+	var content []byte
+	var err error
 	if inputFile == "" {
-		return errors.New("No input file")
+		inputFile = ctx.String("prefix")
+		content, err = ioutil.ReadAll(os.Stdin)
+	} else {
+		content, err = ioutil.ReadFile(inputFile)
 	}
-	outputDir := ctx.String("output-dir")
-
-	content, err := ioutil.ReadFile(inputFile)
 	if err != nil {
 		log.Fatalln("ERROR", err)
 	}
+
+	outputDir := ctx.String("output-dir")
 
 	out, err := shamir.Split(content, no, threshold)
 	if err != nil {
@@ -85,7 +97,7 @@ func split(ctx *cli.Context) error {
 	}
 
 	for ix, part := range out {
-		fn := fmt.Sprintf("%s.part%d", path.Base(inputFile), ix)
+		fn := fmt.Sprintf("%s.%d", path.Base(inputFile), ix)
 		fn = path.Join(outputDir, fn)
 		err = ioutil.WriteFile(fn, part, 0600)
 		if err != nil {
@@ -112,7 +124,7 @@ func combine(ctx *cli.Context) error {
 
 	of := ctx.String("output")
 	if of == "" {
-		return errors.New("No output present")
+		of = "stdout"
 	}
 
 	out, err := shamir.Combine(input)
@@ -120,12 +132,18 @@ func combine(ctx *cli.Context) error {
 		return err
 	}
 
-	err = ioutil.WriteFile(of, out, 0600)
-	if err != nil {
-		return err
+	if of == "stdout" {
+		_, err = os.Stdout.Write(out)
+		if err != nil {
+			return err
+		}
+		os.Stdout.Close()
+	} else {
+		err = ioutil.WriteFile(of, out, 0600)
+		if err != nil {
+			return err
+		}
 	}
-
-	fmt.Println("Result was written into", of)
 
 	return nil
 }
